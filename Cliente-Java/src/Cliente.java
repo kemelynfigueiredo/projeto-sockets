@@ -56,6 +56,7 @@ public class Cliente {
                     saida.println("QUIT");
                     break;
                 }
+
                 saida.println("MSG:" + texto);
             }
 

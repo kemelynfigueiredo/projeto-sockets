@@ -1,6 +1,6 @@
+import os
 import socket
 import threading
-import os
 
 HOST = "127.0.0.1"
 PORT = 12354
@@ -33,7 +33,7 @@ def receber(sock: socket.socket):
                 print(f"\n{formatar_mensagem(linha)}")
 
     print("\nConexao encerrada pelo servidor.")
-    os._exit(0)  # encerra mesmo com o input() bloqueado
+    os._exit(0)
 
 
 def main():
