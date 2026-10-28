@@ -32,7 +32,14 @@ java Servidor
 
 Mantenha o terminal do servidor aberto durante a execução dos clientes.
 
-O servidor utiliza a porta `12345` e disponibiliza a imagem armazenada no arquivo `imagem_servidor.png`.
+O servidor utiliza a porta `12354` e disponibiliza a imagem armazenada no arquivo `imagem_servidor.png`.
+
+Se aparecer a mensagem `Endereço já em uso`, significa que há um processo antigo do servidor ainda rodando. Para encerrar:
+
+```bash
+lsof -i :12354
+fuser -k 12354/tcp
+```
 
 ### 2. Iniciar o cliente Java
 
@@ -91,23 +98,23 @@ Por padrão, os clientes utilizam o endereço `127.0.0.1`, que representa a pró
 No cliente Java, altere o endereço nesta linha:
 
 ```java
-new Socket("127.0.0.1", 12345)
+new Socket("127.0.0.1", 12354)
 ```
 
 No cliente Python, altere nesta linha:
 
 ```python
-socket.create_connection(("127.0.0.1", 12345))
+socket.create_connection(("127.0.0.1", 12354))
 ```
 
 Por exemplo, se o IP do computador servidor for `192.168.1.100`, utilize esse endereço nos dois clientes:
 
 ```java
-new Socket("192.168.1.100", 12345)
+new Socket("192.168.1.100", 12354)
 ```
 
 ```python
-socket.create_connection(("192.168.1.100", 12345))
+socket.create_connection(("192.168.1.100", 12354))
 ```
 
 O endereço acima é apenas um exemplo. Utilize o IP real da máquina que executa o servidor.
@@ -119,6 +126,6 @@ Para que a comunicação funcione, os computadores devem ter conectividade entre
 * O servidor deve permanecer em execução para que os clientes possam se conectar.
 * O servidor aceita até 3 clientes simultaneamente.
 * Os clientes Java e Python podem ser executados em janelas separadas do VS Code.
-* A comunicação utiliza sockets TCP e a porta `12345`.
+* A comunicação utiliza sockets TCP e a porta `12354`.
 * Ao executar tudo na mesma máquina, mantenha o endereço `127.0.0.1`.
 * Para executar os clientes em outra máquina, utilize o IP do computador servidor.

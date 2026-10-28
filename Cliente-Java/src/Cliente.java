@@ -1,110 +1,83 @@
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.PrintStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
 import java.net.Socket;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Base64;
+import java.nio.charset.StandardCharsets;
 import java.util.Scanner;
 
 public class Cliente {
+    private static final String HOST = "127.0.0.1";
+    private static final int PORTA = 12354;
 
-    public static void main(String[] args) throws IOException {
-        try (Socket clienteSocket = new Socket("127.0.0.1", 12345)) {
+    public static void main(String[] args) {
+        try (Socket clienteSocket = new Socket(HOST, PORTA);
+             Scanner teclado = new Scanner(System.in)) {
 
-            Scanner entrada = new Scanner(clienteSocket.getInputStream());
-            PrintStream saida = new PrintStream(clienteSocket.getOutputStream(), true);
+            BufferedReader entradaServidor = new BufferedReader(
+                    new InputStreamReader(clienteSocket.getInputStream(), StandardCharsets.UTF_8)
+            );
+            PrintWriter saida = new PrintWriter(
+                    new OutputStreamWriter(clienteSocket.getOutputStream(), StandardCharsets.UTF_8),
+                    true
+            );
 
-            String status = entrada.nextLine();
-            if (status.startsWith("ERRO")) {
-                System.out.println(status);
-                entrada.close();
-                saida.close();
-                System.out.println("Cliente encerrado.");
-                return;
+            System.out.print("Digite seu nome: ");
+            String nome = teclado.nextLine().trim();
+            while (nome.isEmpty()) {
+                System.out.print("Nome invalido. Digite seu nome: ");
+                nome = teclado.nextLine().trim();
             }
 
-            System.out.println("Conectado ao servidor.");
-            Scanner teclado = new Scanner(System.in);
-            System.out.println();
+            saida.println("JOIN:" + nome);
 
-            while (true) {
-                System.out.println("Menu:");
-                System.out.println("1 - Divisao");
-                System.out.println("2 - Adicao");
-                System.out.println("3 - Subtracao");
-                System.out.println("4 - Pedir imagem ao servidor");
-                System.out.println("0 - Encerrar");
-                System.out.println();
-                System.out.print("Opcao: ");
-                if (!teclado.hasNextLine()) {
-                    System.out.println("\nCONEXAO ENCERRADA!");
+            Thread receptor = new Thread(() -> {
+                try {
+                    String mensagem;
+                    while ((mensagem = entradaServidor.readLine()) != null) {
+                        if (mensagem.trim().isEmpty()) {
+                            continue;
+                        }
+                        System.out.println(formatarMensagem(mensagem));
+                    }
+                } catch (IOException e) {
+                    System.out.println("Conexão encerrada pelo servidor.");
+                }
+            });
+            receptor.setDaemon(true);
+            receptor.start();
+
+            System.out.println("Conectado ao servidor. Digite sua mensagem e 'SAIR' para encerrar.");
+
+            while (teclado.hasNextLine()) {
+                String texto = teclado.nextLine();
+                if (texto.equalsIgnoreCase("SAIR")) {
+                    saida.println("QUIT");
                     break;
                 }
-
-                String opcao = teclado.nextLine();
-
-                String mensagem;
-                if (opcao.equals("1")
-                        || opcao.equals("2")
-                        || opcao.equals("3")) {
-
-                    System.out.println();
-                    System.out.print("Digite o primeiro numero: ");
-                    String numero1 = teclado.nextLine().trim().replace(",", ".");
-
-                    System.out.print("Digite o segundo numero: ");
-                    String numero2 = teclado.nextLine().trim().replace(",", ".");
-
-                    mensagem = opcao + " " + numero1 + " " + numero2;
-
-                } else if (opcao.equals("4")) {
-                    mensagem = "4";
-
-                } else if (opcao.equals("0")) {
-                    mensagem = "0";
-
-                } else {
-                    System.out.println("Opcao invalida.");
-                    System.out.println();
-                    continue;
-                }
-
-                saida.println(mensagem);
-
-                if (!entrada.hasNextLine()) {
-                    System.out.println("Servidor encerrou a conexao.");
-                    break;
-                }
-
-                String resposta = entrada.nextLine();
-                if (opcao.equals("4") && !resposta.startsWith("ERRO")) {
-                    Files.write(Paths.get("carameloPedreiro.jpg"), Base64.getDecoder().decode(resposta));
-
-                    System.out.println("Imagem recebida!");
-                    System.out.println();
-
-                } else {
-                    System.out.println("Resultado: " + resposta);
-                    System.out.println();
-                }
-
-                if (opcao.equals("0")) {
-                    break;
-                }
-
-                if (resposta.equals("ERRO: servidor cheio!")) {
-                    break;
-                }
+                saida.println("MSG:" + texto);
             }
 
-            entrada.close();
+            entradaServidor.close();
             saida.close();
-            teclado.close();
             clienteSocket.close();
         } catch (IOException e) {
-            System.out.println("Servidor desconectado!");
-        } catch (java.util.NoSuchElementException e) {
-            System.out.println("CONEXAO ENCERRADA!");
+            System.out.println("Nao foi possivel conectar ao servidor: " + e.getMessage());
         }
+    }
+
+    private static String formatarMensagem(String mensagem) {
+        String[] partes = mensagem.split("\\|", 3);
+
+        if (partes.length == 3 && "MSG".equals(partes[0])) {
+            return partes[1] + ": " + partes[2];
+        }
+
+        if (partes.length >= 2 && "SERVIDOR".equals(partes[0])) {
+            return "[Servidor] " + partes[1];
+        }
+
+        return mensagem;
     }
 }

@@ -1,91 +1,69 @@
-import base64
 import socket
+import threading
+import os
 
-try:
-    sock = socket.create_connection(("127.0.0.1", 12345))
-    entrada = sock.makefile("r")
-    saida = sock.makefile("w")
+HOST = "127.0.0.1"
+PORT = 12354
 
-    status = entrada.readline().strip()
-    if status.startswith("ERRO"):
-        print(status)
-        sock.close()
-        raise SystemExit
 
-except (ConnectionError, OSError):
-    print("Servidor encerrou a conexao.")
-    raise SystemExit
+def formatar_mensagem(mensagem: str) -> str:
+    partes = mensagem.split("|", 2)
+    if len(partes) == 3 and partes[0] == "MSG":
+        return f"{partes[1]}: {partes[2]}"
+    if len(partes) >= 2 and partes[0] == "SERVIDOR":
+        return f"[Servidor] {partes[1]}"
+    return mensagem
 
-print("Conectado ao servidor.")
-print()
 
-try:
+def receber(sock: socket.socket):
+    buffer = ""
     while True:
-        print("Menu:")
-        print("1 - Divisao")
-        print("2 - Adicao")
-        print("3 - Subtracao")
-        print("4 - Pedir imagem ao servidor")
-        print("0 - Encerrar")
-        print()
-        opcao = input("Opcao: ")
-
-        if opcao in ("1", "2", "3"):
-            numero1 = input("Digite o primeiro numero: ").strip().replace(",", ".")
-            numero2 = input("Digite o segundo numero: ").strip().replace(",", ".")
-
-            mensagem = opcao + " " + numero1 + " " + numero2
-            
-        elif opcao == "4": mensagem = "4"
-
-        elif opcao == "0": mensagem = "0"
-
-        else:
-            print("Opcao invalida.")
-            print()
-            continue
-
-        saida.write(mensagem + "\n")
-        saida.flush()
-
-        resposta = entrada.readline().strip()
-        if resposta == "":
-            print("Servidor desconectado.")
+        try:
+            dados = sock.recv(4096)
+        except OSError:
+            break
+        if not dados:
             break
 
-        if opcao == "4" and not resposta.startswith("ERRO"):
-            with open("carameloPedreiro.jpg", "wb") as arquivo:
-                arquivo.write(base64.b64decode(resposta))
-            print("Imagem recebida!")
-            
-        else:
-            print("Resultado:", resposta)
-            print()
+        buffer += dados.decode("utf-8", errors="replace")
+        while "\n" in buffer:
+            linha, buffer = buffer.split("\n", 1)
+            linha = linha.strip()
+            if linha:
+                print(f"\n{formatar_mensagem(linha)}")
 
-        if opcao == "0":
-            break
+    print("\nConexao encerrada pelo servidor.")
+    os._exit(0)  # encerra mesmo com o input() bloqueado
 
-        if resposta == "ERRO: servidor cheio":
-            break
-        
-except KeyboardInterrupt:
-    print("\nCONEXAO ENCERRADA!")
-    
-except (ConnectionError, OSError):
-    print("Servidor desconectado. Conexao encerrada.")
-    
-finally:
+
+def main():
     try:
-        entrada.close()
-    except OSError:
-        pass
+        sock = socket.create_connection((HOST, PORT))
+    except OSError as e:
+        print(f"Nao foi possivel conectar ao servidor: {e}")
+        return
 
-    try:
-        saida.close()
-    except OSError:
-        pass
+    with sock:
+        nome = input("Digite seu nome: ").strip()
+        while not nome:
+            nome = input("Nome invalido. Digite seu nome: ").strip()
 
-    try:
-        sock.close()
-    except OSError:
-        pass
+        sock.sendall(f"JOIN:{nome}\n".encode("utf-8"))
+
+        threading.Thread(target=receber, args=(sock,), daemon=True).start()
+
+        print("Conectado ao servidor. Digite sua mensagem e 'SAIR' para encerrar.")
+        try:
+            while True:
+                texto = input().strip()
+                if texto.upper() == "SAIR":
+                    sock.sendall(b"QUIT\n")
+                    break
+                if texto:
+                    sock.sendall(f"MSG:{texto}\n".encode("utf-8"))
+        except (KeyboardInterrupt, EOFError):
+            pass
+
+
+if __name__ == "__main__":
+    main()

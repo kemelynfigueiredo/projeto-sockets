@@ -1,128 +1,113 @@
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.PrintStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
 import java.net.Socket;
-import java.util.Scanner;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.nio.charset.StandardCharsets;
 
 public class Conexao {
-
-    Socket socket;
-    ArrayBlockingQueue<String> fila = new ArrayBlockingQueue<>(50);
+    private final Socket socket;
+    private String nomeUsuario;
+    private BufferedReader entrada;
+    private PrintWriter saida;
+    private boolean ativo = true;
 
     public Conexao(Socket socket) {
         this.socket = socket;
     }
 
     public void iniciar() {
-
-        Thread ler_do_socket = new Thread(() -> {
+        Thread thread = new Thread(() -> {
             try {
-                Scanner entrada = new Scanner(socket.getInputStream());
-                while (entrada.hasNextLine()) {
-                    String mensagem = entrada.nextLine();
-                    System.out.println("Mensagem recebida: " + mensagem);
-                    if (mensagem.equals("0")) {
-                        break;
-                    }
-                    fila.put(processarRequisicao(mensagem));
-                }
-                fila.put("CONEXAO ENCERRADA!");
-            } catch (IOException | InterruptedException e) {
-                fila.offer("CONEXAO ENCERRADA!");
-            }
-        });
+                entrada = new BufferedReader(
+                        new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8)
+                );
+                saida = new PrintWriter(
+                        new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8),
+                        true
+                );
 
-        Thread escrever_no_socket = new Thread(() -> {
-            try {
-                PrintStream saida = new PrintStream(socket.getOutputStream(), true);
+                enviar("SERVIDOR|Digite seu nome usando JOIN:nome");
+
                 String mensagem;
-                do {
-                    mensagem = fila.take();
-                    if (mensagem.equals("CONEXAO ENCERRADA!")) {
-                        Servidor.conexoes.remove(this);
+                while (ativo && (mensagem = entrada.readLine()) != null) {
+                    if (mensagem.trim().isEmpty()) {
+                        continue;
                     }
-                    saida.println(mensagem);
-                } while (!mensagem.equals("CONEXAO ENCERRADA!"));
-            } catch (IOException | InterruptedException e) {
-                System.out.println("Erro na escrita: " + e.getMessage());
+                    processarMensagem(mensagem.trim());
+                }
+            } catch (IOException e) {
+                System.out.println("Erro na conexão: " + e.getMessage());
             } finally {
-                fecharConexao();
+                fechar();
             }
         });
 
-        ler_do_socket.start();
-        escrever_no_socket.start();
+        thread.start();
     }
 
-    void fecharConexao() {
+    public void enviar(String mensagem) {
+        if (saida != null) {
+            saida.println(mensagem);
+        }
+    }
+
+    private void processarMensagem(String mensagem) {
+        if (mensagem.startsWith("JOIN:")) {
+            String nome = mensagem.substring("JOIN:".length()).trim();
+            if (nome.isEmpty()) {
+                enviar("SERVIDOR|Nome invalido. Use JOIN:nome");
+                return;
+            }
+
+            this.nomeUsuario = nome;
+            System.out.println("Usuario " + nome + " entrou no chat.");
+            Servidor.enviarParaTodos("SERVIDOR|" + nome + " entrou no chat.");
+            enviar("SERVIDOR|Conectado ao chat. Digite sua mensagem.");
+            return;
+        }
+
+        if (mensagem.equalsIgnoreCase("QUIT")) {
+            String nomeSaida = (nomeUsuario != null) ? nomeUsuario : "Usuario";
+            Servidor.enviarParaTodos("SERVIDOR|" + nomeSaida + " saiu do chat.");
+            ativo = false;
+            return;
+        }
+
+        if (nomeUsuario == null) {
+            enviar("SERVIDOR|Registre seu nome antes de enviar mensagens: JOIN:nome");
+            return;
+        }
+
+        String conteudo = mensagem;
+        if (mensagem.startsWith("MSG:")) {
+            conteudo = mensagem.substring("MSG:".length()).trim();
+        }
+
+        if (conteudo.isEmpty()) {
+            enviar("SERVIDOR|Mensagem vazia.");
+            return;
+        }
+
+        String pacote = "MSG|" + nomeUsuario + "|" + conteudo;
+        System.out.println(pacote);
+        Servidor.enviarParaTodosExceto(this, pacote);
+    }
+
+    private void fechar() {
+        ativo = false;
+        Servidor.clientes.remove(this);
+
         try {
-            socket.close();
+            if (!socket.isClosed()) {
+                socket.close();
+            }
         } catch (IOException e) {
+            System.out.println("Erro ao fechar socket: " + e.getMessage());
         }
-        Servidor.conexoes.remove(this);
 
-        System.out.println();
-        System.out.println(
-                "Cliente "
-                + socket.getInetAddress().getHostAddress()
-                + ":"
-                + socket.getPort()
-                + " saiu."
-        );
-        System.out.println(
-                "Clientes conectados: "
-                + Servidor.conexoes.size()
-                + "/"
-                + Servidor.maxClientes
-        );
-    }
-
-    String formatarResultado(double valor) {
-        String texto = String.valueOf(valor);
-        if (texto.endsWith(".0")) {
-            texto = texto.substring(0, texto.length() - 2);
-        }
-        return texto;
-    }
-
-    String processarRequisicao(String mensagem) {
-        try {
-            String[] partes = mensagem.trim().split("\\s+");
-            String opcao = partes[0];
-
-            if (opcao.equals("1")
-                    || opcao.equals("2")
-                    || opcao.equals("3")) {
-
-                if (partes.length != 3) {
-                    return "ERRO: mensagem invalida";
-                }
-
-                double numero1 = Double.parseDouble(partes[1]);
-                double numero2 = Double.parseDouble(partes[2]);
-
-                if (opcao.equals("1")) {
-                    if (numero2 == 0) {
-                        return "ERRO: divisao por zero";
-                    }
-                    return formatarResultado(numero1 / numero2);
-                }
-
-                if (opcao.equals("2")) {
-                    return formatarResultado(numero1 + numero2);
-                }
-
-                return formatarResultado(numero1 - numero2);
-            }
-
-            // Imagem
-            if (opcao.equals("4")) {
-                return Servidor.imagemBase64;
-            }
-            return "ERRO: opcao invalida";
-
-        } catch (NumberFormatException e) {
-            return "ERRO: mensagem invalida";
-        }
+        System.out.println("Cliente desconectado.");
+        System.out.println("Clientes conectados: " + Servidor.clientes.size());
     }
 }
