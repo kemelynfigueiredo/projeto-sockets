@@ -15,34 +15,41 @@ public class Servidor {
 
             while (true) {
                 Socket socket = servidor.accept();
-                Conexao conexao = new Conexao(socket);
-                clientes.add(conexao);
-                System.out.println(
-                        "Cliente conectado: "
-                                + socket.getInetAddress().getHostAddress()
-                                + ":"
-                                + socket.getPort()
-                );
-                System.out.println("Clientes conectados: " + clientes.size());
-                conexao.iniciar();
+                try {
+                    // Streams sao criados no construtor, ANTES de entrar na lista,
+                    // entao nenhum broadcast encontra uma conexao "pela metade".
+                    Conexao conexao = new Conexao(socket);
+                    clientes.add(conexao);
+                    System.out.println("Cliente conectado: "
+                            + socket.getInetAddress().getHostAddress() + ":" + socket.getPort());
+                    System.out.println("Clientes conectados: " + clientes.size());
+                    conexao.iniciar();
+                } catch (IOException e) {
+                    System.err.println("Falha ao preparar cliente: " + e.getMessage());
+                    try { socket.close(); } catch (IOException ignorado) { }
+                }
             }
         } catch (IOException e) {
-            System.err.println("Erro ao iniciar o servidor: " + e.getMessage());
+            System.err.println("Erro ao iniciar o servidor (porta " + PORTA
+                    + " ja em uso por outro servidor?): " + e.getMessage());
         }
     }
 
+    /** Avisos do sistema: vao para todos que ja entraram no chat (inclusive o autor). */
     static void enviarParaTodos(String mensagem) {
         for (Conexao cliente : clientes) {
-            cliente.enviar(mensagem);
-        }
-    }
-
-    static void enviarParaTodosExceto(Conexao origem, String mensagem) {
-        for (Conexao cliente : clientes) {
-            if (cliente != origem) {
+            if (cliente.estaRegistrado()) {
                 cliente.enviar(mensagem);
             }
         }
     }
 
+    /** Mensagens de chat: todos que ja entraram, menos quem enviou. */
+    static void enviarParaTodosExceto(Conexao origem, String mensagem) {
+        for (Conexao cliente : clientes) {
+            if (cliente != origem && cliente.estaRegistrado()) {
+                cliente.enviar(mensagem);
+            }
+        }
+    }
 }
